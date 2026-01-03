@@ -150,6 +150,12 @@ ChittyChronicle includes several unique service integrations:
 - `/api/timeline/analysis/contradictions` - AI contradiction detection
 - `/api/timeline/analysis/deadlines` - Upcoming deadline tracking
 
+**Document Ingestion Pipeline** (Phase 1 SOTA):
+- `/api/ingestion/upload` - Upload files (multipart) → R2 → Timeline → Auto-embed (async)
+- `/api/ingestion/process` - Process pre-uploaded documents (legacy JSON API)
+- `/api/ingestion/jobs` - Create ingestion jobs
+- `/api/ingestion/jobs/:caseId` - Get ingestion job status
+
 **Communications** (new feature):
 - `/api/communications/conversations` - Conversation threads
 - `/api/communications/messages` - Message CRUD
@@ -220,7 +226,14 @@ ChittyChronicle includes several unique service integrations:
 - `CHITTY_BEACON_API_URL` - ChittyBeacon API URL (defaults to https://api.chittybeacon.com/v1)
 - `CHITTYMCP_BASE_URL` - ChittyMCP base URL (defaults to https://mcp.chitty.cc)
 
-**Google Cloud**:
+**Cloudflare R2 (Primary Document Storage - SOT)**:
+- `R2_ACCOUNT_ID` - Cloudflare account ID (required for R2)
+- `R2_ACCESS_KEY_ID` - R2 access key ID (required for R2)
+- `R2_SECRET_ACCESS_KEY` - R2 secret access key (required for R2)
+- `R2_BUCKET_NAME` - R2 bucket name (defaults to "chittychronicle-documents")
+- `R2_PUBLIC_URL` - Optional public URL for bucket (e.g., custom domain)
+
+**Google Cloud (Legacy)**:
 - `GOOGLE_CLOUD_PROJECT` - Google Cloud project ID for file uploads
 - `GOOGLE_CLOUD_STORAGE_BUCKET` - GCS bucket name for document storage
 
@@ -240,6 +253,46 @@ ChittyChronicle includes several unique service integrations:
 4. Structured contradiction reports generated with severity and suggested resolutions
 5. Results stored in `timeline_contradictions` table
 6. Context event emitted to ChittyConnect
+
+### Document Ingestion Pipeline (Phase 1 SOTA)
+
+**Complete Pipeline Flow**:
+1. **Upload** → Files uploaded via `/api/ingestion/upload` (multipart/form-data)
+2. **R2 Storage** → Documents stored in Cloudflare R2 (Source of Truth)
+3. **Analysis** → Document content analyzed for dates, entities, events
+4. **Timeline Creation** → Timeline entries created with R2 key references
+5. **Embedding Generation** → Vector embeddings auto-generated (async, non-blocking)
+6. **Search Ready** → Entries immediately searchable via hybrid search
+
+**Key Features**:
+- Automatic R2 upload with unique key generation
+- Fire-and-forget embedding generation (doesn't block uploads)
+- Graceful fallback if R2 not configured (uses legacy filePath)
+- Silent embedding failures (can regenerate via batch script)
+- Supports up to 20 files per upload, 100MB per file
+
+**API Usage**:
+```bash
+# Upload files with automatic pipeline processing
+curl -X POST http://localhost:5000/api/ingestion/upload \
+  -F "caseId=<uuid>" \
+  -F "files=@document1.pdf" \
+  -F "files=@document2.pdf"
+
+# Response includes R2 keys, timeline entry IDs, embedding status
+{
+  "success": true,
+  "jobId": "<uuid>",
+  "result": {
+    "documentsProcessed": 2,
+    "entriesCreated": 5,
+    "errors": [],
+    "warnings": []
+  },
+  "message": "Uploaded and processed 2 documents → R2 → Timeline → Embeddings (async)",
+  "filesProcessed": ["document1.pdf", "document2.pdf"]
+}
+```
 
 ### Context Event Publishing
 All significant operations emit context events:

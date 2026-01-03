@@ -28,6 +28,16 @@ import { contradictionService } from "./contradictionService";
 import { requireServiceTokenIfConfigured } from './middleware/authz';
 import { communicationsService } from "./communicationsService";
 import { chittyConnect } from "./chittyConnectClient";
+import multer from "multer";
+import { r2Storage } from "./r2Storage";
+
+// Configure multer for file uploads (memory storage for R2 upload)
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 100 * 1024 * 1024, // 100MB limit
+  },
+});
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Health check endpoint (ChittyGov standard)
@@ -829,11 +839,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Legacy route: process documents from JSON payload
   app.post('/api/ingestion/process', async (req: any, res) => {
     try {
       const userId = 'demo-user';
       const { caseId, documents } = req.body;
-      
+
       if (!caseId || !documents || !Array.isArray(documents)) {
         return res.status(400).json({ message: "caseId and documents array are required" });
       }
@@ -852,19 +863,80 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Process documents
       const result = await ingestionService.processDocuments(caseId, documents, userId);
-      
+
       // Update job status
       await ingestionService.updateIngestionJobStatus(jobId, 'completed', result);
 
-      res.json({ 
-        success: true, 
-        jobId, 
+      res.json({
+        success: true,
+        jobId,
         result,
         message: `Processed ${result.documentsProcessed} documents, created ${result.entriesCreated} timeline entries`
       });
     } catch (error) {
       console.error("Error processing documents:", error);
       res.status(500).json({ message: "Failed to process documents" });
+    }
+  });
+
+  // New route: upload files to R2 and process with auto-embedding
+  app.post('/api/ingestion/upload', upload.array('files', 20), async (req: any, res) => {
+    try {
+      const userId = 'demo-user'; // TODO: get from session
+      const { caseId } = req.body;
+      const files = req.files as Express.Multer.File[];
+
+      if (!caseId) {
+        return res.status(400).json({ message: "caseId is required" });
+      }
+
+      if (!files || files.length === 0) {
+        return res.status(400).json({ message: "No files uploaded" });
+      }
+
+      console.log(`📤 Uploading ${files.length} files for case ${caseId}`);
+
+      // Create ingestion job
+      const jobData = {
+        caseId,
+        source: 'manual_upload' as const,
+        sourceIdentifier: 'File Upload',
+        status: 'processing' as const,
+        createdBy: userId,
+        metadata: {
+          documentCount: files.length,
+          totalSize: files.reduce((sum, f) => sum + f.size, 0),
+        }
+      };
+
+      const jobId = await ingestionService.createIngestionJob(jobData);
+
+      // Convert uploaded files to document format with buffers
+      const documents = files.map(file => ({
+        fileName: file.originalname,
+        content: file.buffer.toString('utf-8'), // For text analysis
+        fileBuffer: file.buffer, // For R2 upload
+      }));
+
+      // Process documents (uploads to R2, creates entries, generates embeddings)
+      const result = await ingestionService.processDocuments(caseId, documents, userId);
+
+      // Update job status
+      await ingestionService.updateIngestionJobStatus(jobId, 'completed', result);
+
+      res.json({
+        success: true,
+        jobId,
+        result,
+        message: `Uploaded and processed ${result.documentsProcessed} documents → R2 → Timeline → Embeddings (async)`,
+        filesProcessed: files.map(f => f.originalname),
+      });
+    } catch (error) {
+      console.error("Error uploading and processing documents:", error);
+      res.status(500).json({
+        message: "Failed to upload and process documents",
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
     }
   });
 
