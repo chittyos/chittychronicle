@@ -1,0 +1,17 @@
+name: Identity & Context Onboarding Gate
+
+on:
+  pull_request:
+  push:
+    branches: [ main ]
+
+jobs:
+  identity-onboarding:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate ChittyID Context Onboarding
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/check-chitty-onboarding.sh .chittyconnect.yml

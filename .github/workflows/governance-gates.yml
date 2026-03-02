@@ -1,0 +1,11 @@
+name: Governance Gates
+
+on:
+  pull_request:
+  push:
+    branches: [ main ]
+
+jobs:
+  gates:
+    uses: ./.github/workflows/reusable-governance-gates.yml
+    secrets: inherit

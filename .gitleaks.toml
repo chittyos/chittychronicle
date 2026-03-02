@@ -1,0 +1,12 @@
+title = "chittycommand-gitleaks-config"
+
+[allowlist]
+description = "Known test/example files with non-production credential-like strings"
+paths = [
+  '''_ext/chittyid/chittycontext\.config\.js''',
+  '''_ext/chittyid/monitoring/scripts/setup-monitoring\.sh''',
+  '''_ext/chittyid/test-security\.sh''',
+  '''_ext/chittyid/tests/integration/chittyrouter-gateway\.test\.js''',
+  '''_ext/chittyid/tests/penetration/bypass-attempts\.test\.js''',
+  '''_ext/chittyops/project-awareness/test/qa-integration-tests\.js''',
+]
