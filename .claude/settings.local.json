@@ -8,23 +8,9 @@
       "Bash(npm run dev)",
       "Bash(PORT=5001 npm run dev)",
       "Bash(curl -s http://localhost:5001/api/health)",
-<<<<<<< HEAD
       "Bash(curl -s https://raw.githubusercontent.com/chittyos/chittystandard/main/README.md)",
       "Bash(curl -s https://api.github.com/repos/chittyos/chittystandard/contents/)",
       "Bash(curl -s https://raw.githubusercontent.com/chittyos/chittystandard/main/package.json)"
-=======
-      "Bash(/Users/nb/.claude/projects/-/chittychat/slash-commands-extended.sh sync)",
-      "Read(//Users/nb/.claude/projects/**)",
-      "Read(//Users/nb/.claude/**)",
-      "Bash(find /Users/nb/.claude/projects/-/CHITTYOS/chittyos-services -maxdepth 1 -type d -exec basename {})",
-      "Bash(xargs basename -a)",
-      "Bash(/Users/nb/.claude/projects/-/chittychat/slash-commands-extended.sh sync sessions)",
-      "Bash(/Users/nb/.claude/projects/-/chittychat/chitty-sync sessions)",
-      "Bash(/Users/nb/.claude/projects/-/chittychat/chitty-sync sessionsync)",
-      "Bash(/Users/nb/.claude/projects/-/chittychat/chitty-sync projectsync)",
-      "Bash(node start-project-sync.mjs)",
-      "Bash(/Users/nb/.claude/projects/-/chittychat/chitty-sync topicsync)"
->>>>>>> 9444e8cfe419d5ae9eb1099e161e77231a9b75ab
     ],
     "deny": [],
     "ask": []
