@@ -1,7 +1,13 @@
-# Cloudflare Workers/Pages configuration for ChittyChronicle
+# Cloudflare Workers configuration for ChittyChronicle
+# Full-stack Express+Vite app backed by Neon PostgreSQL
+# Edge worker handles routing at chronicle.chitty.cc
 
 name = "chittychronicle"
-compatibility_date = "2024-01-01"
+main = "worker/index.ts"
+compatibility_date = "2024-11-01"
+
+[placement]
+mode = "smart"
 
 # Production configuration
 [env.production]
@@ -10,35 +16,16 @@ routes = [
   { pattern = "chronicle.chitty.cc/*", zone_name = "chitty.cc" }
 ]
 
-# Cloudflare Pages configuration
-[build]
-command = "npm run build"
-build_output_directory = "dist/public"
-
-# Environment variables (set these in Cloudflare dashboard)
 [env.production.vars]
-NODE_ENV = "production"
+ENVIRONMENT = "production"
 
-# Durable Objects for real-time features
-[[env.production.durable_objects.bindings]]
-name = "TIMELINE_STATE"
-class_name = "TimelineState"
+# Secrets (set via `wrangler secret put`):
+#   NEON_DATABASE_URL        - Neon PostgreSQL connection string
+#   CHITTYCONNECT_SERVICE_TOKEN - ChittyConnect service auth
 
-# KV namespaces for caching
-[[env.production.kv_namespaces]]
-binding = "CACHE"
-id = "your-kv-namespace-id"
-
-# D1 Database binding (if using Cloudflare D1 instead of external PostgreSQL)
-[[env.production.d1_databases]]
-binding = "DB"
-database_name = "chittychronicle"
-database_id = "your-d1-database-id"
-
-# R2 bucket for file storage
-[[env.production.r2_buckets]]
-binding = "UPLOADS"
-bucket_name = "chittychronicle-uploads"
+# ChittyTrack observability
+[[env.production.tail_consumers]]
+service = "chittytrack"
 
 # Preview/staging environment
 [env.preview]
@@ -48,31 +35,15 @@ routes = [
 ]
 
 [env.preview.vars]
-NODE_ENV = "staging"
+ENVIRONMENT = "staging"
+
+[[env.preview.tail_consumers]]
+service = "chittytrack"
 
 # Development environment
 [env.development]
 name = "chittychronicle-dev"
-vars = { NODE_ENV = "development" }
+vars = { ENVIRONMENT = "development" }
 
-# Cloudflare Pages Functions (serverless API endpoints)
-[functions]
-directory = "functions"
-includes = ["api/*"]
-excludes = []
-
-# Build configuration
-[site]
-bucket = "./dist/public"
-
-# Deployment rules
-[[deployments]]
-environment = "production"
-branch = "main"
-
-[[deployments]]
-environment = "preview"
-branch = "develop"
-# ChittyTrack observability
-[[tail_consumers]]
-service = "chittytrack"
+# No custom build needed — wrangler bundles the worker entry directly
+# Full app build (vite + esbuild) is for container/VM deployments via `npm run build`
