@@ -13,7 +13,21 @@ import {
   boolean,
   real,
   bigint,
+  customType,
 } from "drizzle-orm/pg-core";
+
+// pgvector column type — matches the vector(n) columns declared in migrations/001_add_pgvector.sql
+const vector = customType<{ data: number[]; driverData: string; config: { dimensions: number } }>({
+  dataType(config) {
+    return `vector(${config.dimensions})`;
+  },
+  fromDriver(value: string): number[] {
+    return value.replace(/[\[\]]/g, '').split(',').map(Number);
+  },
+  toDriver(value: number[]): string {
+    return `[${value.join(',')}]`;
+  },
+});
 import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -111,8 +125,9 @@ export const timelineEntries = pgTable("timeline_entries", {
   messageDirection: messageDirectionEnum("message_direction"),
   metadata: jsonb("metadata"),
   // Vector embeddings for semantic search (Phase 1: SOTA Upgrade)
-  descriptionEmbedding: varchar("description_embedding"), // vector(768) - Legal-BERT
-  contentEmbedding: varchar("content_embedding"), // vector(1536) - OpenAI
+  // @canon: migrations/001_add_pgvector.sql declares these as vector(n)
+  descriptionEmbedding: vector("description_embedding", { dimensions: 768 }),
+  contentEmbedding: vector("content_embedding", { dimensions: 1536 }),
   embeddingModel: varchar("embedding_model", { length: 100 }),
   embeddingGeneratedAt: timestamp("embedding_generated_at"),
 });
@@ -134,7 +149,8 @@ export const timelineSources = pgTable("timeline_sources", {
   chittyAssetId: varchar("chitty_asset_id", { length: 255 }),
   metadata: jsonb("metadata"),
   // Vector embeddings for semantic search (Phase 1: SOTA Upgrade)
-  excerptEmbedding: varchar("excerpt_embedding"), // vector(768) - Legal-BERT
+  // @canon: migrations/001_add_pgvector.sql declares this as vector(768)
+  excerptEmbedding: vector("excerpt_embedding", { dimensions: 768 }),
   embeddingModel: varchar("embedding_model", { length: 100 }),
   embeddingGeneratedAt: timestamp("embedding_generated_at"),
 });
