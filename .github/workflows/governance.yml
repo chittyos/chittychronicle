@@ -1,0 +1,36 @@
+# ChittyOS PR Governance - Caller Workflow
+#
+# Copy this file to your repository at: .github/workflows/governance.yml
+#
+# IMPORTANT: Replace <SHA> with the current commit SHA of chittycanon.
+# This ensures the governance workflow cannot be modified without your knowledge.
+#
+# To get the current SHA:
+#   git ls-remote https://github.com/CHITTYFOUNDATION/chittycanon refs/heads/main
+#
+# Or run the deploy script which will update this automatically.
+
+name: Governance
+
+on:
+  pull_request:
+    branches:
+      - main
+      - master
+      - production
+      - 'release/**'
+
+jobs:
+  governance:
+    name: PR Governance Check
+    # Pin to exact SHA - NEVER use branch or tag reference
+    # This ensures governance rules cannot be modified without updating all repos
+    uses: CHITTYFOUNDATION/chittycanon/.github/workflows/pr-governance.yml@83a7d1da1cfa5041f18450a6d43ff336068285de
+    with:
+      governance_version: main
+
+  hardening:
+    name: Portfolio Hardening Check
+    uses: CHITTYFOUNDATION/chittycanon/.github/workflows/portfolio-hardening.yml@83a7d1da1cfa5041f18450a6d43ff336068285de
+    with:
+      tier: "2"
