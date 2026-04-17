@@ -1,14 +1,10 @@
-# ChittyOS PR Governance - Caller Workflow
+# Governance (Monolithic)
 #
-# Copy this file to your repository at: .github/workflows/governance.yml
+# Deployed into each repository as: .github/workflows/governance.yml
 #
-# IMPORTANT: Replace <SHA> with the current commit SHA of chittycanon.
-# This ensures the governance workflow cannot be modified without your knowledge.
+# Rationale: self-contained workflow avoids cross-org reusable workflow restrictions
+# and allows the governance gate to run on the bootstrap PR itself.
 #
-# To get the current SHA:
-#   git ls-remote https://github.com/CHITTYFOUNDATION/chittycanon refs/heads/main
-#
-# Or run the deploy script which will update this automatically.
 
 name: Governance
 
@@ -20,17 +16,208 @@ on:
       - production
       - 'release/**'
 
+permissions:
+  contents: read
+  pull-requests: read
+
 jobs:
   governance:
     name: PR Governance Check
-    # Pin to exact SHA - NEVER use branch or tag reference
-    # This ensures governance rules cannot be modified without updating all repos
-    uses: CHITTYFOUNDATION/chittycanon/.github/workflows/pr-governance.yml@83a7d1da1cfa5041f18450a6d43ff336068285de
-    with:
-      governance_version: main
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch Governance Rules
+        run: |
+          # Public distribution repo (rules are signed; safe to publish)
+          curl -sL "https://raw.githubusercontent.com/chittyfoundation/.github/main/governance/rules.json" -o rules.json
+          curl -sL "https://raw.githubusercontent.com/chittyfoundation/.github/main/governance/CANON_PUBLIC_KEY" -o CANON_PUBLIC_KEY
+
+      - name: Verify Rules Signature
+        run: |
+          SIGNATURE=$(jq -r '.signature.signature // empty' rules.json)
+          if [[ -z "$SIGNATURE" ]]; then
+            echo "::error::Governance rules are NOT SIGNED. Human must run sign-rules.sh and publish CANON_PUBLIC_KEY + signed rules.json."
+            exit 1
+          fi
+
+          CANONICAL=$(jq -cS 'del(.signature.signature) | del(.signature.signed_at)' rules.json)
+          echo -n "$CANONICAL" > canonical.json
+          echo "$SIGNATURE" | base64 -d > signature.bin
+
+          openssl pkeyutl -verify -pubin -inkey CANON_PUBLIC_KEY -sigfile signature.bin -in canonical.json
+
+      - name: Require CODEOWNERS
+        run: |
+          if [[ -f "CODEOWNERS" || -f ".github/CODEOWNERS" || -f "docs/CODEOWNERS" ]]; then
+            exit 0
+          fi
+          echo "::error::Missing CODEOWNERS"
+          exit 1
+
+      - name: Check Protected File Changes
+        run: |
+          CHANGED_FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }})
+          echo "Changed files:"
+          echo "$CHANGED_FILES"
+          echo ""
+
+          PROTECTED_PATTERNS=$(jq -r '.rules.protected_files.files[]' rules.json)
+          VIOLATIONS=""
+
+          for pattern in $PROTECTED_PATTERNS; do
+            REGEX=$(echo "$pattern" | sed 's/\*\*/.*/' | sed 's/\*/.*/g')
+            while IFS= read -r file; do
+              if [[ "$file" =~ $REGEX ]]; then
+                VIOLATIONS="${VIOLATIONS}${file} matches protected pattern: ${pattern}\n"
+              fi
+            done <<< "$CHANGED_FILES"
+          done
+
+          if [[ -n "$VIOLATIONS" ]]; then
+            echo "::warning::Protected files modified (extra scrutiny required):"
+            echo -e "$VIOLATIONS"
+          fi
+
+      - name: Require Human Approval
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: reviews } = await github.rest.pulls.listReviews({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.payload.pull_request.number
+            });
+            const humanApprovals = reviews.filter(r => r.state === 'APPROVED' && !r.user.login.includes('[bot]'));
+            const required = 1;
+            if (humanApprovals.length < required) {
+              core.setFailed(`Requires at least ${required} human approval(s). Current: ${humanApprovals.length}`);
+            }
 
   hardening:
     name: Portfolio Hardening Check
-    uses: CHITTYFOUNDATION/chittycanon/.github/workflows/portfolio-hardening.yml@83a7d1da1cfa5041f18450a6d43ff336068285de
-    with:
-      tier: "2"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Baseline Hardening
+        shell: bash
+        run: |
+          set -euo pipefail
+          fail() { echo "::error::$1"; exit 1; }
+          warn() { echo "::warning::$1"; }
+
+          OWNERS_URL="https://raw.githubusercontent.com/chittyfoundation/.github/main/governance/owners.json"
+          REQS_URL="https://raw.githubusercontent.com/chittyfoundation/.github/main/governance/repo_requirements.json"
+          curl -sL "$OWNERS_URL" -o owners.json || fail "Unable to fetch ownership registry: $OWNERS_URL"
+          curl -sL "$REQS_URL" -o repo_requirements.json || fail "Unable to fetch repo requirements: $REQS_URL"
+
+          if [[ ! -f "SECURITY.md" && ! -f ".github/SECURITY.md" ]]; then
+            fail "Missing SECURITY.md"
+          fi
+          if git ls-files --error-unmatch .env >/dev/null 2>&1; then
+            fail "Tracked .env detected"
+          fi
+          if git ls-files | grep -qE '(^|/)node_modules/'; then
+            fail "Tracked node_modules detected"
+          fi
+          if git ls-files | grep -qE '(^|/)\\.wrangler/'; then
+            fail "Tracked .wrangler detected"
+          fi
+          if [[ -f "package.json" ]]; then
+            LOCKS=0
+            [[ -f "package-lock.json" ]] && LOCKS=$((LOCKS+1))
+            [[ -f "pnpm-lock.yaml" ]] && LOCKS=$((LOCKS+1))
+            [[ -f "yarn.lock" ]] && LOCKS=$((LOCKS+1))
+            if [[ "$LOCKS" -eq 0 ]]; then
+              fail "package.json present but no lockfile found"
+            fi
+          fi
+
+          # Eligibility gating (warn-only until registry is populated)
+          OWNERS_FILE="CODEOWNERS"
+          [[ -f ".github/CODEOWNERS" ]] && OWNERS_FILE=".github/CODEOWNERS"
+          PRINCIPALS=$(sed 's/#.*$//' "$OWNERS_FILE" | tr '\t' ' ' | tr ' ' '\n' | grep '^@' | sort -u || true)
+          [[ -n "$PRINCIPALS" ]] || exit 0
+
+          FULL_REPO="${GITHUB_REPOSITORY}"
+          REQUIREMENT=$(jq -c --arg repo "$FULL_REPO" '
+            def glob_to_re($g):
+              "^" + ($g
+                | gsub("\\."; "\\\\.")
+                | gsub("\\*\\*"; ".*")
+                | gsub("\\*"; "[^/]*")
+              ) + "$";
+            .repos
+            | map(. + { re: (glob_to_re(.repo)) })
+            | map(select($repo | test(.re)))
+            | .[0] // empty
+          ' repo_requirements.json)
+
+          [[ -n "$REQUIREMENT" ]] || exit 0
+
+          REQ_TY=$(echo "$REQUIREMENT" | jq -r '.requires.ty[]?' 2>/dev/null || true)
+          REQ_VY=$(echo "$REQUIREMENT" | jq -r '.requires.vy[]?' 2>/dev/null || true)
+          REQ_RY=$(echo "$REQUIREMENT" | jq -r '.requires.ry[]?' 2>/dev/null || true)
+
+          now_epoch=$(date -u +%s)
+          term_present() {
+            local row_json="$1"; local dim="$2"; local term="$3"
+            echo "$row_json" | jq -e --arg dim "$dim" --arg term "$term" '
+              ((.[ $dim ].given // []) | any(.term == $term)) or
+              ((.[ $dim ].earned // []) | any(.term == $term))
+            ' >/dev/null
+          }
+          term_is_given() {
+            local row_json="$1"; local dim="$2"; local term="$3"
+            echo "$row_json" | jq -e --arg dim "$dim" --arg term "$term" '
+              ((.[ $dim ].given // []) | any(.term == $term))
+            ' >/dev/null
+          }
+          given_expiry_ok() {
+            local row_json="$1"; local dim="$2"; local term="$3"; local exp; local exp_epoch
+            exp=$(echo "$row_json" | jq -r --arg dim "$dim" --arg term "$term" '
+              ([.[ $dim ].given[]? | select(.term == $term) | .expires_at] | .[0]) // empty
+            ')
+            [[ -n "$exp" ]] || return 2
+            exp_epoch=$(date -u -d "$exp" +%s 2>/dev/null || echo "")
+            [[ -n "$exp_epoch" ]] || return 3
+            [[ "$exp_epoch" -ge "$now_epoch" ]]
+          }
+
+          while IFS= read -r principal; do
+            [[ -z "$principal" ]] && continue
+            row=$(jq -c --arg gh "$principal" '.principals[]? | select(.github==$gh)' owners.json || true)
+            if [[ -z "$row" ]]; then
+              warn "CODEOWNERS principal missing from registry: $principal"
+              continue
+            fi
+            ok="true"
+            for t in $REQ_TY; do
+              term_present "$row" "ty" "$t" || ok="false"
+              if term_is_given "$row" "ty" "$t"; then
+                if ! given_expiry_ok "$row" "ty" "$t"; then ok="false"; fi
+              fi
+            done
+            for v in $REQ_VY; do
+              term_present "$row" "vy" "$v" || ok="false"
+              if term_is_given "$row" "vy" "$v"; then
+                if ! given_expiry_ok "$row" "vy" "$v"; then ok="false"; fi
+              fi
+            done
+            for r in $REQ_RY; do
+              term_present "$row" "ry" "$r" || ok="false"
+              if term_is_given "$row" "ry" "$r"; then
+                if ! given_expiry_ok "$row" "ry" "$r"; then ok="false"; fi
+              fi
+            done
+            if [[ "$ok" != "true" ]]; then
+              warn "CODEOWNERS principal fails TY/VY/RY eligibility: $principal"
+            fi
+          done <<< "$PRINCIPALS"
