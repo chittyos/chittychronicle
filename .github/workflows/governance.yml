@@ -52,7 +52,7 @@ jobs:
               ) + "$";
             .repos
             | map(. + { re: (glob_to_re(.repo)) })
-            | map(select($repo | test(.re)))
+            | map(select(.re as $re | $repo | test($re)))
             | .[0].tier // 99
           ' repo_requirements.json 2>/dev/null || echo "99")
           echo "tier=$tier" >> "$GITHUB_OUTPUT"
@@ -181,7 +181,7 @@ jobs:
               ) + "$";
             .repos
             | map(. + { re: (glob_to_re(.repo)) })
-            | map(select($repo | test(.re)))
+            | map(select(.re as $re | $repo | test($re)))
             | .[0] // empty
           ' repo_requirements.json)
 
