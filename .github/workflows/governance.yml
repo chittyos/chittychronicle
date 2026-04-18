@@ -110,19 +110,17 @@ jobs:
           # If rules are unsigned, fall back to a minimal bootstrap set.
           SIGNATURE=$(jq -r '.signature.signature // empty' rules.json)
           if [[ -z "$SIGNATURE" ]]; then
-            PROTECTED_PATTERNS=$(cat <<'EOF'
-.github/workflows/**
-.github/CODEOWNERS
-CODEOWNERS
-governance/**
-EOF
-            )
+            mapfile -t PROTECTED_PATTERNS < <(printf '%s\n' \
+              ".github/workflows/**" \
+              ".github/CODEOWNERS" \
+              "CODEOWNERS" \
+              "governance/**")
           else
-            PROTECTED_PATTERNS=$(jq -r '.rules.protected_files.files[]' rules.json)
+            mapfile -t PROTECTED_PATTERNS < <(jq -r '.rules.protected_files.files[]' rules.json)
           fi
           VIOLATIONS=""
 
-          for pattern in $PROTECTED_PATTERNS; do
+          for pattern in "${PROTECTED_PATTERNS[@]}"; do
             REGEX=$(echo "$pattern" | sed 's/\*\*/.*/' | sed 's/\*/.*/g')
             while IFS= read -r file; do
               if [[ "$file" =~ $REGEX ]]; then
