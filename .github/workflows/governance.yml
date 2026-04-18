@@ -30,25 +30,65 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Fetch Governance Rules
+      - name: Fetch Governance Rules + Repo Requirements
         run: |
           # Public distribution repo (rules are signed; safe to publish)
           curl -sL "https://raw.githubusercontent.com/chittyfoundation/.github/main/governance/rules.json" -o rules.json
           curl -sL "https://raw.githubusercontent.com/chittyfoundation/.github/main/governance/CANON_PUBLIC_KEY" -o CANON_PUBLIC_KEY
+          curl -sL "https://raw.githubusercontent.com/chittyfoundation/.github/main/governance/repo_requirements.json" -o repo_requirements.json
 
-      - name: Verify Rules Signature
+      - name: Determine Repo Tier
+        id: tier
+        shell: bash
         run: |
+          set -euo pipefail
+          FULL_REPO="${GITHUB_REPOSITORY}"
+          tier=$(jq -r --arg repo "$FULL_REPO" '
+            def glob_to_re($g):
+              "^" + ($g
+                | gsub("\\."; "\\\\.")
+                | gsub("\\*\\*"; ".*")
+                | gsub("\\*"; "[^/]*")
+              ) + "$";
+            .repos
+            | map(. + { re: (glob_to_re(.repo)) })
+            | map(select($repo | test(.re)))
+            | .[0].tier // 99
+          ' repo_requirements.json 2>/dev/null || echo "99")
+          echo "tier=$tier" >> "$GITHUB_OUTPUT"
+          if [[ "$tier" -le 1 ]]; then
+            echo "::notice::Repo tier=${tier} (strict governance)"
+          else
+            echo "::notice::Repo tier=${tier} (bootstrap governance allowed)"
+          fi
+
+      - name: Verify Rules Signature (Phased)
+        shell: bash
+        run: |
+          set -euo pipefail
+          tier='${{ steps.tier.outputs.tier }}'
           SIGNATURE=$(jq -r '.signature.signature // empty' rules.json)
+
           if [[ -z "$SIGNATURE" ]]; then
-            echo "::error::Governance rules are NOT SIGNED. Human must run sign-rules.sh and publish CANON_PUBLIC_KEY + signed rules.json."
-            exit 1
+            if [[ "$tier" -le 1 ]]; then
+              echo "::error::Governance rules are NOT SIGNED. Tier ${tier} requires signed rules. Human must run sign-rules.sh and publish CANON_PUBLIC_KEY + signed rules.json."
+              exit 1
+            fi
+            echo "::warning::Governance rules are NOT SIGNED. Continuing in bootstrap mode (Tier ${tier})."
+            exit 0
           fi
 
           CANONICAL=$(jq -cS 'del(.signature.signature) | del(.signature.signed_at)' rules.json)
           echo -n "$CANONICAL" > canonical.json
           echo "$SIGNATURE" | base64 -d > signature.bin
 
-          openssl pkeyutl -verify -pubin -inkey CANON_PUBLIC_KEY -sigfile signature.bin -in canonical.json
+          if openssl pkeyutl -verify -pubin -inkey CANON_PUBLIC_KEY -sigfile signature.bin -in canonical.json; then
+            echo "::notice::Governance rules signature VERIFIED"
+            exit 0
+          fi
+
+          echo "::error::Governance rules signature INVALID. Rules may have been tampered with."
+          exit 1
 
       - name: Require CODEOWNERS
         run: |
@@ -59,13 +99,27 @@ jobs:
           exit 1
 
       - name: Check Protected File Changes
+        shell: bash
         run: |
+          set -euo pipefail
           CHANGED_FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }})
           echo "Changed files:"
           echo "$CHANGED_FILES"
           echo ""
 
-          PROTECTED_PATTERNS=$(jq -r '.rules.protected_files.files[]' rules.json)
+          # If rules are unsigned, fall back to a minimal bootstrap set.
+          SIGNATURE=$(jq -r '.signature.signature // empty' rules.json)
+          if [[ -z "$SIGNATURE" ]]; then
+            PROTECTED_PATTERNS=$(cat <<'EOF'
+.github/workflows/**
+.github/CODEOWNERS
+CODEOWNERS
+governance/**
+EOF
+            )
+          else
+            PROTECTED_PATTERNS=$(jq -r '.rules.protected_files.files[]' rules.json)
+          fi
           VIOLATIONS=""
 
           for pattern in $PROTECTED_PATTERNS; do
@@ -118,8 +172,33 @@ jobs:
           curl -sL "$OWNERS_URL" -o owners.json || fail "Unable to fetch ownership registry: $OWNERS_URL"
           curl -sL "$REQS_URL" -o repo_requirements.json || fail "Unable to fetch repo requirements: $REQS_URL"
 
+          # Determine tier (unknown repos default to tier 99)
+          FULL_REPO="${GITHUB_REPOSITORY}"
+          REQUIREMENT=$(jq -c --arg repo "$FULL_REPO" '
+            def glob_to_re($g):
+              "^" + ($g
+                | gsub("\\."; "\\\\.")
+                | gsub("\\*\\*"; ".*")
+                | gsub("\\*"; "[^/]*")
+              ) + "$";
+            .repos
+            | map(. + { re: (glob_to_re(.repo)) })
+            | map(select($repo | test(.re)))
+            | .[0] // empty
+          ' repo_requirements.json)
+
+          tier=99
+          if [[ -n "$REQUIREMENT" ]]; then
+            tier=$(echo "$REQUIREMENT" | jq -r '.tier // 99')
+          fi
+
+          # Tiered enforcement: hard-fail Tier 0/1 first; warn elsewhere (except secrets/supply-chain hard fails).
           if [[ ! -f "SECURITY.md" && ! -f ".github/SECURITY.md" ]]; then
-            fail "Missing SECURITY.md"
+            if [[ "$tier" -le 1 ]]; then
+              fail "Missing SECURITY.md (Tier ${tier})"
+            else
+              warn "Missing SECURITY.md (Tier ${tier})"
+            fi
           fi
           if git ls-files --error-unmatch .env >/dev/null 2>&1; then
             fail "Tracked .env detected"
@@ -136,31 +215,29 @@ jobs:
             [[ -f "pnpm-lock.yaml" ]] && LOCKS=$((LOCKS+1))
             [[ -f "yarn.lock" ]] && LOCKS=$((LOCKS+1))
             if [[ "$LOCKS" -eq 0 ]]; then
-              fail "package.json present but no lockfile found"
+              if [[ "$tier" -le 1 ]]; then
+                fail "package.json present but no lockfile found (Tier ${tier})"
+              else
+                warn "package.json present but no lockfile found (Tier ${tier})"
+              fi
             fi
           fi
 
-          # Eligibility gating (warn-only until registry is populated)
+          # Eligibility gating (warn-only for Tier 2+; fail for Tier 0/1)
           OWNERS_FILE="CODEOWNERS"
           [[ -f ".github/CODEOWNERS" ]] && OWNERS_FILE=".github/CODEOWNERS"
+          if [[ ! -f "$OWNERS_FILE" ]]; then
+            if [[ "$tier" -le 1 ]]; then
+              fail "Missing CODEOWNERS (Tier ${tier})"
+            else
+              warn "Missing CODEOWNERS (Tier ${tier})"
+              exit 0
+            fi
+          fi
           PRINCIPALS=$(sed 's/#.*$//' "$OWNERS_FILE" | tr '\t' ' ' | tr ' ' '\n' | grep '^@' | sort -u || true)
           [[ -n "$PRINCIPALS" ]] || exit 0
 
-          FULL_REPO="${GITHUB_REPOSITORY}"
-          REQUIREMENT=$(jq -c --arg repo "$FULL_REPO" '
-            def glob_to_re($g):
-              "^" + ($g
-                | gsub("\\."; "\\\\.")
-                | gsub("\\*\\*"; ".*")
-                | gsub("\\*"; "[^/]*")
-              ) + "$";
-            .repos
-            | map(. + { re: (glob_to_re(.repo)) })
-            | map(select($repo | test(.re)))
-            | .[0] // empty
-          ' repo_requirements.json)
-
-          [[ -n "$REQUIREMENT" ]] || exit 0
+          [[ -n "$REQUIREMENT" ]] || { warn "No repo_requirements entry for ${FULL_REPO}; skipping eligibility gating"; exit 0; }
 
           REQ_TY=$(echo "$REQUIREMENT" | jq -r '.requires.ty[]?' 2>/dev/null || true)
           REQ_VY=$(echo "$REQUIREMENT" | jq -r '.requires.vy[]?' 2>/dev/null || true)
@@ -195,7 +272,11 @@ jobs:
             [[ -z "$principal" ]] && continue
             row=$(jq -c --arg gh "$principal" '.principals[]? | select(.github==$gh)' owners.json || true)
             if [[ -z "$row" ]]; then
-              warn "CODEOWNERS principal missing from registry: $principal"
+              if [[ "$tier" -le 1 ]]; then
+                fail "CODEOWNERS principal missing from registry: $principal (Tier ${tier})"
+              else
+                warn "CODEOWNERS principal missing from registry: $principal (Tier ${tier})"
+              fi
               continue
             fi
             ok="true"
@@ -218,6 +299,10 @@ jobs:
               fi
             done
             if [[ "$ok" != "true" ]]; then
-              warn "CODEOWNERS principal fails TY/VY/RY eligibility: $principal"
+              if [[ "$tier" -le 1 ]]; then
+                fail "CODEOWNERS principal fails TY/VY/RY eligibility: $principal (Tier ${tier})"
+              else
+                warn "CODEOWNERS principal fails TY/VY/RY eligibility: $principal (Tier ${tier})"
+              fi
             fi
           done <<< "$PRINCIPALS"
