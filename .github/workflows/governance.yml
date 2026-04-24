@@ -1,0 +1,306 @@
+# Governance (Monolithic)
+#
+# Deployed into each repository as: .github/workflows/governance.yml
+#
+# Rationale: self-contained workflow avoids cross-org reusable workflow restrictions
+# and allows the governance gate to run on the bootstrap PR itself.
+#
+
+name: Governance
+
+on:
+  pull_request:
+    branches:
+      - main
+      - master
+      - production
+      - 'release/**'
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  governance:
+    name: PR Governance Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch Governance Rules + Repo Requirements
+        run: |
+          # Public distribution repo (rules are signed; safe to publish)
+          curl -sL "https://raw.githubusercontent.com/chittyfoundation/.github/main/governance/rules.json" -o rules.json
+          curl -sL "https://raw.githubusercontent.com/chittyfoundation/.github/main/governance/CANON_PUBLIC_KEY" -o CANON_PUBLIC_KEY
+          curl -sL "https://raw.githubusercontent.com/chittyfoundation/.github/main/governance/repo_requirements.json" -o repo_requirements.json
+
+      - name: Determine Repo Tier
+        id: tier
+        shell: bash
+        run: |
+          set -euo pipefail
+          FULL_REPO="${GITHUB_REPOSITORY}"
+          tier=$(jq -r --arg repo "$FULL_REPO" '
+            def glob_to_re($g):
+              "^" + ($g
+                | gsub("\\."; "\\\\.")
+                | gsub("\\*\\*"; ".*")
+                | gsub("\\*"; "[^/]*")
+              ) + "$";
+            .repos
+            | map(. + { re: (glob_to_re(.repo)) })
+            | map(select(.re as $re | $repo | test($re)))
+            | .[0].tier // 99
+          ' repo_requirements.json 2>/dev/null || echo "99")
+          echo "tier=$tier" >> "$GITHUB_OUTPUT"
+          if [[ "$tier" -le 1 ]]; then
+            echo "::notice::Repo tier=${tier} (strict governance)"
+          else
+            echo "::notice::Repo tier=${tier} (bootstrap governance allowed)"
+          fi
+
+      - name: Verify Rules Signature (Phased)
+        shell: bash
+        run: |
+          set -euo pipefail
+          tier='${{ steps.tier.outputs.tier }}'
+          SIGNATURE=$(jq -r '.signature.signature // empty' rules.json)
+
+          if [[ -z "$SIGNATURE" ]]; then
+            if [[ "$tier" -le 1 ]]; then
+              echo "::error::Governance rules are NOT SIGNED. Tier ${tier} requires signed rules. Human must run sign-rules.sh and publish CANON_PUBLIC_KEY + signed rules.json."
+              exit 1
+            fi
+            echo "::warning::Governance rules are NOT SIGNED. Continuing in bootstrap mode (Tier ${tier})."
+            exit 0
+          fi
+
+          CANONICAL=$(jq -cS 'del(.signature.signature) | del(.signature.signed_at)' rules.json)
+          echo -n "$CANONICAL" > canonical.json
+          echo "$SIGNATURE" | base64 -d > signature.bin
+
+          if openssl pkeyutl -verify -pubin -inkey CANON_PUBLIC_KEY -sigfile signature.bin -in canonical.json; then
+            echo "::notice::Governance rules signature VERIFIED"
+            exit 0
+          fi
+
+          echo "::error::Governance rules signature INVALID. Rules may have been tampered with."
+          exit 1
+
+      - name: Require CODEOWNERS
+        run: |
+          if [[ -f "CODEOWNERS" || -f ".github/CODEOWNERS" || -f "docs/CODEOWNERS" ]]; then
+            exit 0
+          fi
+          echo "::error::Missing CODEOWNERS"
+          exit 1
+
+      - name: Check Protected File Changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          CHANGED_FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }})
+          echo "Changed files:"
+          echo "$CHANGED_FILES"
+          echo ""
+
+          # If rules are unsigned, fall back to a minimal bootstrap set.
+          SIGNATURE=$(jq -r '.signature.signature // empty' rules.json)
+          if [[ -z "$SIGNATURE" ]]; then
+            mapfile -t PROTECTED_PATTERNS < <(printf '%s\n' \
+              ".github/workflows/**" \
+              ".github/CODEOWNERS" \
+              "CODEOWNERS" \
+              "governance/**")
+          else
+            mapfile -t PROTECTED_PATTERNS < <(jq -r '.rules.protected_files.files[]' rules.json)
+          fi
+          VIOLATIONS=""
+
+          for pattern in "${PROTECTED_PATTERNS[@]}"; do
+            REGEX=$(echo "$pattern" | sed 's/\*\*/.*/' | sed 's/\*/.*/g')
+            while IFS= read -r file; do
+              if [[ "$file" =~ $REGEX ]]; then
+                VIOLATIONS="${VIOLATIONS}${file} matches protected pattern: ${pattern}\n"
+              fi
+            done <<< "$CHANGED_FILES"
+          done
+
+          if [[ -n "$VIOLATIONS" ]]; then
+            echo "::warning::Protected files modified (extra scrutiny required):"
+            echo -e "$VIOLATIONS"
+          fi
+
+      - name: Require Human Approval
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: reviews } = await github.rest.pulls.listReviews({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.payload.pull_request.number
+            });
+            const humanApprovals = reviews.filter(r => r.state === 'APPROVED' && !r.user.login.includes('[bot]'));
+            const required = 1;
+            if (humanApprovals.length < required) {
+              core.setFailed(`Requires at least ${required} human approval(s). Current: ${humanApprovals.length}`);
+            }
+
+  hardening:
+    name: Portfolio Hardening Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Baseline Hardening
+        shell: bash
+        run: |
+          set -euo pipefail
+          fail() { echo "::error::$1"; exit 1; }
+          warn() { echo "::warning::$1"; }
+
+          OWNERS_URL="https://raw.githubusercontent.com/chittyfoundation/.github/main/governance/owners.json"
+          REQS_URL="https://raw.githubusercontent.com/chittyfoundation/.github/main/governance/repo_requirements.json"
+          curl -sL "$OWNERS_URL" -o owners.json || fail "Unable to fetch ownership registry: $OWNERS_URL"
+          curl -sL "$REQS_URL" -o repo_requirements.json || fail "Unable to fetch repo requirements: $REQS_URL"
+
+          # Determine tier (unknown repos default to tier 99)
+          FULL_REPO="${GITHUB_REPOSITORY}"
+          REQUIREMENT=$(jq -c --arg repo "$FULL_REPO" '
+            def glob_to_re($g):
+              "^" + ($g
+                | gsub("\\."; "\\\\.")
+                | gsub("\\*\\*"; ".*")
+                | gsub("\\*"; "[^/]*")
+              ) + "$";
+            .repos
+            | map(. + { re: (glob_to_re(.repo)) })
+            | map(select(.re as $re | $repo | test($re)))
+            | .[0] // empty
+          ' repo_requirements.json)
+
+          tier=99
+          if [[ -n "$REQUIREMENT" ]]; then
+            tier=$(echo "$REQUIREMENT" | jq -r '.tier // 99')
+          fi
+
+          # Tiered enforcement: hard-fail Tier 0/1 first; warn elsewhere (except secrets/supply-chain hard fails).
+          if [[ ! -f "SECURITY.md" && ! -f ".github/SECURITY.md" ]]; then
+            if [[ "$tier" -le 1 ]]; then
+              fail "Missing SECURITY.md (Tier ${tier})"
+            else
+              warn "Missing SECURITY.md (Tier ${tier})"
+            fi
+          fi
+          if git ls-files --error-unmatch .env >/dev/null 2>&1; then
+            fail "Tracked .env detected"
+          fi
+          if git ls-files | grep -qE '(^|/)node_modules/'; then
+            fail "Tracked node_modules detected"
+          fi
+          if git ls-files | grep -qE '(^|/)\\.wrangler/'; then
+            fail "Tracked .wrangler detected"
+          fi
+          if [[ -f "package.json" ]]; then
+            LOCKS=0
+            [[ -f "package-lock.json" ]] && LOCKS=$((LOCKS+1))
+            [[ -f "pnpm-lock.yaml" ]] && LOCKS=$((LOCKS+1))
+            [[ -f "yarn.lock" ]] && LOCKS=$((LOCKS+1))
+            if [[ "$LOCKS" -eq 0 ]]; then
+              if [[ "$tier" -le 1 ]]; then
+                fail "package.json present but no lockfile found (Tier ${tier})"
+              else
+                warn "package.json present but no lockfile found (Tier ${tier})"
+              fi
+            fi
+          fi
+
+          # Eligibility gating (warn-only for Tier 2+; fail for Tier 0/1)
+          OWNERS_FILE="CODEOWNERS"
+          [[ -f ".github/CODEOWNERS" ]] && OWNERS_FILE=".github/CODEOWNERS"
+          if [[ ! -f "$OWNERS_FILE" ]]; then
+            if [[ "$tier" -le 1 ]]; then
+              fail "Missing CODEOWNERS (Tier ${tier})"
+            else
+              warn "Missing CODEOWNERS (Tier ${tier})"
+              exit 0
+            fi
+          fi
+          PRINCIPALS=$(sed 's/#.*$//' "$OWNERS_FILE" | tr '\t' ' ' | tr ' ' '\n' | grep '^@' | sort -u || true)
+          [[ -n "$PRINCIPALS" ]] || exit 0
+
+          [[ -n "$REQUIREMENT" ]] || { warn "No repo_requirements entry for ${FULL_REPO}; skipping eligibility gating"; exit 0; }
+
+          REQ_TY=$(echo "$REQUIREMENT" | jq -r '.requires.ty[]?' 2>/dev/null || true)
+          REQ_VY=$(echo "$REQUIREMENT" | jq -r '.requires.vy[]?' 2>/dev/null || true)
+          REQ_RY=$(echo "$REQUIREMENT" | jq -r '.requires.ry[]?' 2>/dev/null || true)
+
+          now_epoch=$(date -u +%s)
+          term_present() {
+            local row_json="$1"; local dim="$2"; local term="$3"
+            echo "$row_json" | jq -e --arg dim "$dim" --arg term "$term" '
+              ((.[ $dim ].given // []) | any(.term == $term)) or
+              ((.[ $dim ].earned // []) | any(.term == $term))
+            ' >/dev/null
+          }
+          term_is_given() {
+            local row_json="$1"; local dim="$2"; local term="$3"
+            echo "$row_json" | jq -e --arg dim "$dim" --arg term "$term" '
+              ((.[ $dim ].given // []) | any(.term == $term))
+            ' >/dev/null
+          }
+          given_expiry_ok() {
+            local row_json="$1"; local dim="$2"; local term="$3"; local exp; local exp_epoch
+            exp=$(echo "$row_json" | jq -r --arg dim "$dim" --arg term "$term" '
+              ([.[ $dim ].given[]? | select(.term == $term) | .expires_at] | .[0]) // empty
+            ')
+            [[ -n "$exp" ]] || return 2
+            exp_epoch=$(date -u -d "$exp" +%s 2>/dev/null || echo "")
+            [[ -n "$exp_epoch" ]] || return 3
+            [[ "$exp_epoch" -ge "$now_epoch" ]]
+          }
+
+          while IFS= read -r principal; do
+            [[ -z "$principal" ]] && continue
+            row=$(jq -c --arg gh "$principal" '.principals[]? | select(.github==$gh)' owners.json || true)
+            if [[ -z "$row" ]]; then
+              if [[ "$tier" -le 1 ]]; then
+                fail "CODEOWNERS principal missing from registry: $principal (Tier ${tier})"
+              else
+                warn "CODEOWNERS principal missing from registry: $principal (Tier ${tier})"
+              fi
+              continue
+            fi
+            ok="true"
+            for t in $REQ_TY; do
+              term_present "$row" "ty" "$t" || ok="false"
+              if term_is_given "$row" "ty" "$t"; then
+                if ! given_expiry_ok "$row" "ty" "$t"; then ok="false"; fi
+              fi
+            done
+            for v in $REQ_VY; do
+              term_present "$row" "vy" "$v" || ok="false"
+              if term_is_given "$row" "vy" "$v"; then
+                if ! given_expiry_ok "$row" "vy" "$v"; then ok="false"; fi
+              fi
+            done
+            for r in $REQ_RY; do
+              term_present "$row" "ry" "$r" || ok="false"
+              if term_is_given "$row" "ry" "$r"; then
+                if ! given_expiry_ok "$row" "ry" "$r"; then ok="false"; fi
+              fi
+            done
+            if [[ "$ok" != "true" ]]; then
+              if [[ "$tier" -le 1 ]]; then
+                fail "CODEOWNERS principal fails TY/VY/RY eligibility: $principal (Tier ${tier})"
+              else
+                warn "CODEOWNERS principal fails TY/VY/RY eligibility: $principal (Tier ${tier})"
+              fi
+            fi
+          done <<< "$PRINCIPALS"
