@@ -11,7 +11,7 @@
     "db:push": "drizzle-kit push"
   },
   "dependencies": {
-    "@anthropic-ai/claude-code": "^2.1.75",
+    "@anthropic-ai/claude-code": "^2.1.84",
     "@hookform/resolvers": "^3.10.0",
     "@jridgewell/trace-mapping": "^0.3.25",
     "@neondatabase/serverless": "^0.10.4",
@@ -96,8 +96,8 @@
     "@vitejs/plugin-react": "^4.7.0",
     "autoprefixer": "^10.4.20",
     "drizzle-kit": "^0.31.9",
-    "esbuild": "^0.25.1",
-    "postcss": "^8.4.47",
+    "esbuild": "^0.25.2",
+    "postcss": "^8.5.10",
     "tailwindcss": "^3.4.17",
     "tsx": "^4.21.0",
     "typescript": "5.6.3",
