@@ -21,7 +21,6 @@ ENVIRONMENT = "production"
 
 # Secrets (set via `wrangler secret put`):
 #   NEON_DATABASE_URL        - Neon PostgreSQL connection string
-#   CHITTYCONNECT_SERVICE_TOKEN - ChittyConnect service auth
 
 # ChittyTrack observability
 [[env.production.tail_consumers]]

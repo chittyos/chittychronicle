@@ -3,7 +3,6 @@
 
 interface Env {
   NEON_DATABASE_URL: string;
-  CHITTYCONNECT_SERVICE_TOKEN: string;
   ENVIRONMENT: string;
 }
 
