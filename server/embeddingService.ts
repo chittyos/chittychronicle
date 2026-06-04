@@ -170,14 +170,11 @@ export async function embedTimelineEntry(entryId: string): Promise<void> {
   // Generate embedding
   const result = await generateEmbedding(textToEmbed);
 
-  // Convert embedding array to PostgreSQL vector format
-  const vectorString = `[${result.embedding.join(",")}]`;
-
-  // Update the entry with embedding
+  // Update the entry with embedding (customType handles vector serialization)
   await db
     .update(timelineEntries)
     .set({
-      contentEmbedding: vectorString,
+      contentEmbedding: result.embedding,
       embeddingModel: result.model,
       embeddingGeneratedAt: new Date(),
     })
@@ -258,13 +255,12 @@ export async function embedAllMissingEntries(
       for (let j = 0; j < batch.length; j++) {
         const entry = batch[j];
         const embedding = result.embeddings[j];
-        const vectorString = `[${embedding.join(",")}]`;
 
         try {
           await db
             .update(timelineEntries)
             .set({
-              contentEmbedding: vectorString,
+              contentEmbedding: embedding,
               embeddingModel: result.model,
               embeddingGeneratedAt: new Date(),
             })
@@ -322,12 +318,11 @@ export async function embedTimelineSource(sourceId: string): Promise<void> {
   }
 
   const result = await generateEmbedding(source.excerpt);
-  const vectorString = `[${result.embedding.join(",")}]`;
 
   await db
     .update(timelineSources)
     .set({
-      excerptEmbedding: vectorString,
+      excerptEmbedding: result.embedding,
       embeddingModel: result.model,
       embeddingGeneratedAt: new Date(),
     })
