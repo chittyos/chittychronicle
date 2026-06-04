@@ -12,6 +12,7 @@ import type { Express } from "express";
 import { searchService } from "./hybridSearchService";
 import { ragService } from "./ragService";
 import { embeddingService } from "./embeddingService";
+import { requireServiceToken } from "./middleware/authz";
 
 export function registerSOTARoutes(app: Express) {
 
@@ -33,7 +34,7 @@ export function registerSOTARoutes(app: Express) {
    *
    * Example: /api/timeline/search/hybrid?caseId=123&query=contract%20breach&alpha=0.6
    */
-  app.get('/api/timeline/search/hybrid', async (req: any, res) => {
+  app.get('/api/timeline/search/hybrid', requireServiceToken, async (req: any, res) => {
     try {
       const { caseId, query, topK, alpha, entryType, dateFrom, dateTo, confidenceLevel } = req.query;
 
@@ -96,7 +97,7 @@ export function registerSOTARoutes(app: Express) {
    *   "confidence": 0.85
    * }
    */
-  app.post('/api/timeline/ask', async (req: any, res) => {
+  app.post('/api/timeline/ask', requireServiceToken, async (req: any, res) => {
     try {
       const { caseId, question, topK, alpha, includeMetadata } = req.body;
 
@@ -379,7 +380,7 @@ export function registerSOTARoutes(app: Express) {
    * Provides keyword-only search without semantic capabilities
    * Useful for testing or when embeddings are unavailable
    */
-  app.get('/api/timeline/search/keyword', async (req: any, res) => {
+  app.get('/api/timeline/search/keyword', requireServiceToken, async (req: any, res) => {
     try {
       const { caseId, query, topK } = req.query;
 
@@ -413,7 +414,7 @@ export function registerSOTARoutes(app: Express) {
    * Provides pure semantic search without keyword matching
    * Useful for testing or comparing search strategies
    */
-  app.get('/api/timeline/search/semantic', async (req: any, res) => {
+  app.get('/api/timeline/search/semantic', requireServiceToken, async (req: any, res) => {
     try {
       const { caseId, query, topK } = req.query;
 

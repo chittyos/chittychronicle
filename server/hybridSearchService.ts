@@ -194,33 +194,33 @@ async function semanticSearch(
   topK: number
 ): Promise<SearchResult[]> {
 
-  // Build WHERE clause for filters
-  let filterConditions = `
-    WHERE te.case_id = '${caseId}'
-    AND te.deleted_at IS NULL
-    AND te.content_embedding IS NOT NULL
-  `;
+  // Build parameterized conditions (no string interpolation of user input)
+  const conditions: ReturnType<typeof sql>[] = [
+    sql`${timelineEntries.caseId} = ${caseId}`,
+    sql`${timelineEntries.deletedAt} IS NULL`,
+    sql`${timelineEntries.contentEmbedding} IS NOT NULL`,
+  ];
 
   if (filters?.entryType) {
-    filterConditions += ` AND te.entry_type = '${filters.entryType}'`;
+    conditions.push(sql`${timelineEntries.entryType} = ${filters.entryType}`);
   }
-
   if (filters?.dateFrom) {
-    filterConditions += ` AND te.date >= '${filters.dateFrom}'`;
+    conditions.push(sql`${timelineEntries.date} >= ${filters.dateFrom}`);
   }
-
   if (filters?.dateTo) {
-    filterConditions += ` AND te.date <= '${filters.dateTo}'`;
+    conditions.push(sql`${timelineEntries.date} <= ${filters.dateTo}`);
   }
 
-  // Execute semantic search
+  const whereClause = sql.join(conditions, sql` AND `);
+
+  // Execute semantic search with parameterized vector binding
   const results = await db.execute(sql`
     SELECT
-      te.*,
-      1 - (te.content_embedding <=> ${sql.raw(queryVector)}::vector) as similarity
-    FROM timeline_entries te
-    ${sql.raw(filterConditions)}
-    ORDER BY te.content_embedding <=> ${sql.raw(queryVector)}::vector
+      *,
+      1 - (content_embedding <=> ${queryVector}::vector) as similarity
+    FROM timeline_entries
+    WHERE ${whereClause}
+    ORDER BY content_embedding <=> ${queryVector}::vector
     LIMIT ${topK}
   `);
 
