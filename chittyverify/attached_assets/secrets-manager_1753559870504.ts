@@ -1,9 +1,9 @@
 /**
  * ChittyChain Secrets Manager
- * Secure API key and sensitive data management using 1Password
+ * Secure API key and sensitive data management using chittysecrets
  */
 
-import { Client } from '@1password/sdk';
+import { Client } from '@chittysecrets/sdk';
 
 interface SecretConfig {
   vaultId: string;
@@ -16,7 +16,7 @@ class SecretsManager {
   private initialized = false;
 
   constructor() {
-    // Initialize 1Password client
+    // Initialize chittysecrets client
     this.client = new Client({
       auth: process.env.OP_SERVICE_ACCOUNT_TOKEN || '',
       integrationName: 'ChittyChain Evidence Ledger',
@@ -31,9 +31,9 @@ class SecretsManager {
       // Test connection
       await this.client.vaults.listAll();
       this.initialized = true;
-      console.log('✅ 1Password Secrets Manager initialized');
+      console.log('✅ chittysecrets Secrets Manager initialized');
     } catch (error) {
-      console.warn('⚠️  1Password not available, falling back to environment variables');
+      console.warn('⚠️  chittysecrets not available, falling back to environment variables');
       this.initialized = false;
     }
   }

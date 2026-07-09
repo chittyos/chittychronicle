@@ -27,7 +27,7 @@ ChittyChronicle uses GitHub Actions for automated deployment to Cloudflare infra
 │     - Upload build artifacts                                │
 │                                                              │
 │  2. Deploy Backend (Cloudflare Workers)                     │
-│     - wrangler deploy                                       │
+│     - cf deploy                                       │
 │     - Route: chronicle.chitty.cc/*                          │
 │                                                              │
 │  3. Deploy Frontend (Cloudflare Pages)                      │

@@ -51,7 +51,7 @@ aribia-chronicle/
 │
 ├── config/                         # Configuration-first approach
 │   ├── aribia-litigation.yaml     # Case-specific config
-│   ├── secrets.yaml               # 1Password secret refs
+│   ├── secrets.yaml               # chittysecrets secret refs
 │   ├── development.yaml
 │   ├── staging.yaml
 │   └── production.yaml
@@ -100,7 +100,7 @@ aribia-chronicle/
 - Node.js 18+
 - PostgreSQL (Neon recommended)
 - Anthropic API key (Claude Sonnet 4)
-- 1Password CLI (optional, for secrets)
+- chittysecrets CLI (optional, for secrets)
 
 ### Installation
 
@@ -189,7 +189,7 @@ business:
 
 ### Secret Management
 
-Uses 1Password for secure secret storage:
+Uses chittysecrets for secure secret storage:
 
 ```yaml
 # config/secrets.yaml

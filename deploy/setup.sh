@@ -60,12 +60,12 @@ else
     exit 1
 fi
 
-# Check 1Password CLI (optional)
+# Check chittysecrets CLI (optional)
 if command -v op &> /dev/null; then
     OP_VERSION=$(op --version)
-    echo -e "${GREEN}✓ 1Password CLI: ${OP_VERSION}${NC}"
+    echo -e "${GREEN}✓ chittysecrets CLI: ${OP_VERSION}${NC}"
 else
-    echo -e "${YELLOW}⚠ 1Password CLI not found (secrets will need manual configuration)${NC}"
+    echo -e "${YELLOW}⚠ chittysecrets CLI not found (secrets will need manual configuration)${NC}"
 fi
 
 echo ""
@@ -83,9 +83,9 @@ else
 fi
 echo ""
 
-# Step 4: Resolve secrets from 1Password
+# Step 4: Resolve secrets from chittysecrets
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "🔐 Step 4: Resolving secrets from 1Password..."
+echo "🔐 Step 4: Resolving secrets from chittysecrets..."
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 if [ "$DRY_RUN" = "false" ]; then

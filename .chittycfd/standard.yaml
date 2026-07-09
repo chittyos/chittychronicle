@@ -25,7 +25,7 @@ compliance:
   config_driven: true
   separation_of_concerns: true
   multi_environment: true
-  secret_management: "1password"
+  secret_management: "chittysecrets"
   immutable_infrastructure: true
 
 # ChittyOS API Compliance

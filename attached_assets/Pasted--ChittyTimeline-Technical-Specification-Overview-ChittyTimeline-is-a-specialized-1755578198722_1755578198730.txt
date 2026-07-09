@@ -405,7 +405,7 @@
        encryption: {
          atRest: boolean;
          algorithm: 'AES-256-GCM';
-         keyManagement: 'chittykeys' | 'aws-kms' | '1password';
+         keyManagement: 'chittykeys' | 'aws-kms' | 'chittysecrets';
        };
 
        privilegedData: {

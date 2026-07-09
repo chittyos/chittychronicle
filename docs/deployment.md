@@ -23,7 +23,7 @@ This guide covers the complete deployment process for ARIBIA Chronicle using the
 
 ### Optional Tools
 
-- **1Password CLI**: For automated secret management
+- **chittysecrets CLI**: For automated secret management
 - **Docker**: For containerized deployment
 - **Cloudflare CLI**: For edge deployment
 
@@ -88,10 +88,10 @@ cd aribia-chronicle
 
 #### 2. Configure Secrets
 
-**Option A: Using 1Password CLI**
+**Option A: Using chittysecrets CLI**
 
 ```bash
-# Login to 1Password
+# Login to chittysecrets
 eval $(op signin)
 
 # Secrets will be auto-resolved during setup

@@ -85,7 +85,7 @@ echo ""
 
 # Deploy to Cloudflare
 echo "Starting deployment..."
-wrangler deploy --config="$WRANGLER_CONFIG" --env="$ENVIRONMENT"
+cf deploy --config="$WRANGLER_CONFIG" --env="$ENVIRONMENT"
 
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

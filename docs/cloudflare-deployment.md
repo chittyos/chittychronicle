@@ -165,7 +165,7 @@ npm run build
 
 ```bash
 # Deploy to production
-wrangler deploy --config=wrangler.aribia.toml --env=production
+cf deploy --config=wrangler.aribia.toml --env=production
 
 # Or use deployment script
 bash deploy/cloudflare-deploy.sh production
@@ -352,7 +352,7 @@ wrangler kv:key get "evidence-agent:state" \
 
 ```bash
 # Check wrangler config
-wrangler deploy --dry-run --config=wrangler.aribia.toml
+cf deploy --dry-run --config=wrangler.aribia.toml
 
 # Validate syntax
 npx toml-cli validate wrangler.aribia.toml

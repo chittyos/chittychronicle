@@ -75,7 +75,7 @@ workflow:
     - name: "resolve-secrets"
       required: true
       script: "deploy/resolve-secrets.sh"
-      secret_provider: "1password"
+      secret_provider: "chittysecrets"
 
     - name: "apply-configuration"
       required: true
@@ -115,7 +115,7 @@ workflow:
 
 # Secret Management
 secrets:
-  provider: "1password"
+  provider: "chittysecrets"
   vault: "ARIBIA_LEGAL"
   items:
     - name: "NEON_DATABASE_URL"
