@@ -120,7 +120,7 @@ wrangler secret put SESSION_SECRET --env=production
 
 ```bash
 npm run build
-cf deploy --config=wrangler.aribia.toml --env=production
+wrangler deploy --config=wrangler.aribia.toml --env=production
 ```
 
 ---
@@ -219,10 +219,10 @@ npm run cf:deploy:staging
 
 ```bash
 # Check configuration
-cf deploy --dry-run --config=wrangler.aribia.toml
+wrangler deploy --dry-run --config=wrangler.aribia.toml
 
 # View detailed errors
-cf deploy --config=wrangler.aribia.toml --env=production --verbose
+wrangler deploy --config=wrangler.aribia.toml --env=production --verbose
 ```
 
 ### Agents Not Running

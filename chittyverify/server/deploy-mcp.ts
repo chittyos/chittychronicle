@@ -87,7 +87,7 @@ async function generateDeploymentCommands() {
 
   MCP_SERVERS.forEach((server, index) => {
     console.log(`# Deploy ${server.name}`);
-    console.log(`npx cf deploy ${server.sourceFile} --name ${server.workerName}`);
+    console.log(`npx wrangler deploy ${server.sourceFile} --name ${server.workerName}`);
     console.log(`# Test deployment`);
     console.log(`curl https://${server.workerName}.your-subdomain.workers.dev/health\n`);
   });
