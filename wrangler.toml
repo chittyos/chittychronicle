@@ -4,7 +4,7 @@
 
 name = "chittychronicle"
 main = "worker/index.ts"
-compatibility_date = "2024-11-01"
+compatibility_date = "2026-08-07"
 
 [placement]
 mode = "smart"
