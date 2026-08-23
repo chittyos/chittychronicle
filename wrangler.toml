@@ -24,9 +24,6 @@ ENVIRONMENT = "production"
 #   CHITTYCONNECT_SERVICE_TOKEN - ChittyConnect service auth
 
 # ChittyTrack observability
-[[env.production.tail_consumers]]
-service = "chittytrack"
-
 # Preview/staging environment
 [env.preview]
 name = "chittychronicle-preview"
@@ -36,9 +33,6 @@ routes = [
 
 [env.preview.vars]
 ENVIRONMENT = "staging"
-
-[[env.preview.tail_consumers]]
-service = "chittytrack"
 
 # Development environment
 [env.development]

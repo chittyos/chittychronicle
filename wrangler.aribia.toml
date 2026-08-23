@@ -130,11 +130,11 @@ format = "service-worker"
 # OBSERVABILITY
 # ============================================================================
 [observability]
-enabled = true
+enabled = false
 
 # Logs
 [observability.logs]
-enabled = true
+enabled = false
 
 # ============================================================================
 # AI BINDING (for Cloudflare AI Workers)
