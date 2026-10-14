@@ -25,7 +25,8 @@ import { chittyTrust } from "./chittyTrust";
 import { emitContextEvent } from "./contextEmitter";
 import { chittyBeacon } from "./chittyBeacon";
 import { contradictionService } from "./contradictionService";
-import { requireServiceTokenIfConfigured } from './middleware/authz';
+import { requireServiceToken } from './middleware/authz';
+import { requireEventActor, requireEventCaseBody, requireEventCaseQuery } from './middleware/event-authority';
 import { communicationsService } from "./communicationsService";
 import { chittyConnect } from "./chittyConnectClient";
 
@@ -266,12 +267,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // AUTHORITY-OF-EVENTS (REST)
   // ==========================
   // Create event authority record (wraps timeline entry creation)
-  app.post('/api/v1/events', requireServiceTokenIfConfigured, async (req: any, res) => {
+  app.post('/api/v1/events', requireServiceToken, requireEventActor, requireEventCaseBody, async (req: any, res) => {
     try {
       const entryData = insertTimelineEntrySchema.parse({
         ...req.body,
-        createdBy: 'demo-user',
-        modifiedBy: 'demo-user',
+        createdBy: req.chittyActorId,
+        modifiedBy: req.chittyActorId,
       });
       const entry = await storage.createTimelineEntry(entryData);
       emitContextEvent('timeline.entry.created', {
@@ -294,7 +295,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get event authority view
-  app.get('/api/v1/events/:id', requireServiceTokenIfConfigured, async (req: any, res) => {
+  app.get('/api/v1/events/:id', requireServiceToken, requireEventCaseQuery, async (req: any, res) => {
     try {
       const { id } = req.params;
       const { caseId } = req.query;
@@ -307,7 +308,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Verify event (trust scoring)
-  app.post('/api/v1/events/:id/verify', requireServiceTokenIfConfigured, async (req: any, res) => {
+  app.post('/api/v1/events/:id/verify', requireServiceToken, requireEventCaseQuery, async (req: any, res) => {
     try {
       const { id } = req.params;
       const { caseId } = req.query;
@@ -326,7 +327,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Mint event attestation (soft-mint local; hard-mint only in production code path)
-  app.post('/api/v1/events/:id/mint', requireServiceTokenIfConfigured, async (req: any, res) => {
+  app.post('/api/v1/events/:id/mint', requireServiceToken, requireEventCaseQuery, async (req: any, res) => {
     try {
       const { id } = req.params;
       const { caseId } = req.query;
@@ -355,7 +356,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Certify event (policy-based) — returns 501 unless configured
-  app.post('/api/v1/events/:id/certify', requireServiceTokenIfConfigured, async (req: any, res) => {
+  app.post('/api/v1/events/:id/certify', requireServiceToken, requireEventCaseQuery, async (req: any, res) => {
     try {
       const certifyBase = process.env.CHITTYCERTIFY_BASE_URL || process.env.CHITTY_CERTIFY_URL;
       if (!certifyBase) {
