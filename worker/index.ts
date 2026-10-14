@@ -33,6 +33,19 @@ export default {
         });
       }
 
+      if (path === '/api/v1/status') {
+        return Response.json({
+          status: 'degraded',
+          service: 'chittychronicle',
+          tier: 5,
+          surface: 'edge',
+          applicationApi: 'not-routed',
+          canonicalEventPath: '/api/v1/events',
+          environment: env.ENVIRONMENT,
+          timestamp: new Date().toISOString(),
+        });
+      }
+
       if (path === '/.well-known/chronicle-manifest.json' || path === '/.well-known/service-manifest.json') {
         return Response.json({
           service: 'chittychronicle',
@@ -43,6 +56,7 @@ export default {
           ecosystem: 'chittyos',
           endpoints: {
             health: '/api/health',
+            status: '/api/v1/status',
             serviceManifest: '/.well-known/service-manifest.json',
             chronicleManifest: '/.well-known/chronicle-manifest.json',
             mcpManifest: '/.well-known/mcp-manifest.json',
