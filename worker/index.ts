@@ -33,20 +33,37 @@ export default {
         });
       }
 
+      if (path === '/api/v1/status') {
+        return Response.json({
+          status: 'degraded',
+          service: 'chittychronicle',
+          tier: 5,
+          surface: 'edge',
+          applicationApi: 'not-routed',
+          canonicalEventPath: '/api/v1/events',
+          environment: env.ENVIRONMENT,
+          timestamp: new Date().toISOString(),
+        });
+      }
+
       if (path === '/.well-known/chronicle-manifest.json' || path === '/.well-known/service-manifest.json') {
         return Response.json({
           service: 'chittychronicle',
           version: '1.0.0',
-          description: 'Legal timeline management and evidentiary tracking',
+          description: 'ChittyChronicle edge discovery and health surface',
           tier: 5,
           domain: 'application',
           ecosystem: 'chittyos',
           endpoints: {
             health: '/api/health',
-            cases: '/api/cases',
-            timeline: '/api/timeline/entries',
-            search: '/api/timeline/search',
-            contradictions: '/api/timeline/analysis/contradictions',
+            status: '/api/v1/status',
+            serviceManifest: '/.well-known/service-manifest.json',
+            chronicleManifest: '/.well-known/chronicle-manifest.json',
+            mcpManifest: '/.well-known/mcp-manifest.json',
+          },
+          applicationApi: {
+            status: 'not-routed',
+            canonicalEventPath: '/api/v1/events',
           },
           dependencies: ['chittyid', 'chittyconnect', 'chittybeacon'],
         });
@@ -56,13 +73,25 @@ export default {
         return Response.json({
           schema_version: '1.0',
           name: 'chittychronicle',
-          description: 'Legal timeline management MCP tools',
-          tools: [
-            { name: 'timeline_search', description: 'Search timeline entries' },
-            { name: 'case_list', description: 'List legal cases' },
-            { name: 'contradiction_detect', description: 'AI contradiction detection' },
-          ],
+          description: 'ChittyChronicle edge discovery surface; application MCP tools are not routed here',
+          available: false,
+          reason: 'application_api_not_routed',
+          tools: [],
         });
+      }
+
+      if (path === '/events' || path === '/api/v1/log' || path.startsWith('/api/v1/events') ||
+          path.startsWith('/api/cases') || path.startsWith('/api/timeline')) {
+        return Response.json(
+          {
+            error: 'ChittyChronicle application API is not routed through this edge Worker',
+            code: 'APPLICATION_API_NOT_ROUTED',
+            service: 'chittychronicle',
+            canonicalEventPath: '/api/v1/events',
+            path,
+          },
+          { status: 503 }
+        );
       }
 
       return Response.json(

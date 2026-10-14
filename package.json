@@ -9,6 +9,7 @@
     "start": "NODE_ENV=production node dist/index.js",
     "check": "tsc",
     "test": "tsx --test tests/phase1-integration.test.ts",
+    "test:authority": "tsx --test tests/require-service-token.test.ts tests/event-authority.test.ts",
     "test:watch": "node --test --watch tests/phase1-integration.test.ts",
     "validate:staging": "./scripts/validate-deployment.sh staging",
     "validate:production": "./scripts/validate-deployment.sh production",
